@@ -2,18 +2,20 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Plus, MessageSquare } from "lucide-react";
+import { Plus, MessageSquare, Trash2 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useToast } from "@/hooks/use-toast";
+import { Checkbox } from "@/components/ui/checkbox";
 
 const Index = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
   const [aiPrompt, setAiPrompt] = useState("");
+  const [selectedNotes, setSelectedNotes] = useState<string[]>([]);
 
-  const { data: notes, isLoading } = useQuery({
+  const { data: notes, isLoading, refetch } = useQuery({
     queryKey: ["notes"],
     queryFn: async () => {
       const { data, error } = await supabase
@@ -29,6 +31,39 @@ const Index = () => {
       return data;
     },
   });
+
+  const handleDelete = async () => {
+    if (selectedNotes.length === 0) {
+      toast({
+        title: "No notes selected",
+        description: "Please select notes to delete",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      const { error } = await supabase
+        .from("notes")
+        .delete()
+        .in("id", selectedNotes);
+
+      if (error) throw error;
+
+      toast({
+        title: "Notes deleted successfully",
+      });
+      setSelectedNotes([]);
+      refetch();
+    } catch (error) {
+      console.error("Error deleting notes:", error);
+      toast({
+        title: "Error deleting notes",
+        description: "Please try again later",
+        variant: "destructive",
+      });
+    }
+  };
 
   const handleAiChat = async () => {
     if (!aiPrompt.trim()) {
@@ -82,18 +117,31 @@ const Index = () => {
     }
   };
 
+  const toggleNoteSelection = (noteId: string) => {
+    setSelectedNotes(prev =>
+      prev.includes(noteId)
+        ? prev.filter(id => id !== noteId)
+        : [...prev, noteId]
+    );
+  };
+
   if (isLoading) {
     return <div>Loading...</div>;
   }
 
   return (
-    <div className="space-y-6">
+    <div className="w-[85%] mx-auto space-y-6 p-6 bg-card rounded-lg shadow-xl">
       <div className="flex justify-between items-center">
         <h2 className="text-3xl font-bold gradient-text">My Notes</h2>
         <div className="flex gap-4">
           <Button onClick={() => navigate("/new-note")}>
             <Plus className="mr-2 h-4 w-4" /> New Note
           </Button>
+          {selectedNotes.length > 0 && (
+            <Button variant="destructive" onClick={handleDelete}>
+              <Trash2 className="mr-2 h-4 w-4" /> Delete Selected
+            </Button>
+          )}
           <Popover>
             <PopoverTrigger asChild>
               <Button variant="outline">
@@ -122,17 +170,26 @@ const Index = () => {
         {notes?.map((note) => (
           <Card 
             key={note.id} 
-            className="glass-card hover:shadow-2xl transition-shadow cursor-pointer"
-            onClick={() => navigate(`/note/${note.id}`)}
+            className="glass-card hover:shadow-2xl transition-shadow relative"
           >
-            <CardHeader>
-              <CardTitle className="text-lg">{note.title}</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="text-muted-foreground">
-                Click to view or edit this note...
-              </p>
-            </CardContent>
+            <div className="absolute top-2 right-2">
+              <Checkbox
+                checked={selectedNotes.includes(note.id)}
+                onCheckedChange={() => toggleNoteSelection(note.id)}
+                onClick={(e) => e.stopPropagation()}
+              />
+            </div>
+            <div onClick={() => navigate(`/note/${note.id}`)}>
+              <CardHeader>
+                <CardTitle className="text-lg">{note.title}</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-muted-foreground">
+                  {note.content?.slice(0, 100)}
+                  {note.content?.length > 100 ? "..." : ""}
+                </p>
+              </CardContent>
+            </div>
           </Card>
         ))}
       </div>
